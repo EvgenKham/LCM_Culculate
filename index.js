@@ -3,11 +3,22 @@ const http = require('http');
 const url = require('url');
 
 const YOUR_EMAIL = 'hamitcevich@gmail.com';
-
 const EMAIL_PATH = YOUR_EMAIL.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
-function findGCD(a, b) {
-  while (b !== 0) {
+function parseBigIntSafe(str) {
+  try {
+    const cleaned = String(str).replace(/[^0-9\-]/g, '');
+    if (!cleaned || cleaned === '-') return null;
+
+    const num = BigInt(cleaned);
+    return num;
+  } catch (error) {
+    return null;
+  }
+}
+
+function gcdBigInt(a, b) {
+  while (b !== 0n) {
     const temp = b;
     b = a % b;
     a = temp;
@@ -15,48 +26,65 @@ function findGCD(a, b) {
   return a;
 }
 
-function findLCM(x, y) {
-  if (x === 0 || y === 0) return 0;
-  return Math.abs(x * y) / findGCD(x, y);
+function lcmBigInt(x, y) {
+  if (x === 0n || y === 0n) return 0n;
+  const absX = x < 0n ? -x : x;
+  const absY = y < 0n ? -y : y;
+  return (absX * absY) / gcdBigInt(absX, absY);
 }
 
-function isNatural(num) {
-  return Number.isInteger(num) && num > 0;
+function isNaturalBigInt(num) {
+  return num !== null && typeof num === 'bigint' && num > 0n;
 }
 
-function safeParseInt(param) {
-  if (param === undefined || param === null) return NaN;
-  const cleaned = String(param).replace(/[^0-9\-]/g, '');
-  const result = parseInt(cleaned);
-  return isNaN(result) ? NaN : result;
+function canUseNumber(num) {
+  return num <= Number.MAX_SAFE_INTEGER && num >= Number.MIN_SAFE_INTEGER;
+}
+
+function calculateLCM(xStr, yStr) {
+  const xBig = parseBigIntSafe(xStr);
+  const yBig = parseBigIntSafe(yStr);
+
+  if (isNaturalBigInt(xBig) && isNaturalBigInt(yBig)) {
+    const result = lcmBigInt(xBig, yBig);
+    return result.toString();
+  }
+
+  const xNum = parseInt(String(xStr).replace(/[^0-9\-]/g, '')) || NaN;
+  const yNum = parseInt(String(yStr).replace(/[^0-9\-]/g, '')) || NaN;
+
+  if (Number.isInteger(xNum) && Number.isInteger(yNum) && xNum > 0 && yNum > 0) {
+    if (xNum > Number.MAX_SAFE_INTEGER || yNum > Number.MAX_SAFE_INTEGER) {
+      return 'NaN';
+    }
+    const gcd = (a, b) => b ? gcd(b, a % b) : a;
+    const result = Math.abs(xNum * yNum) / gcd(xNum, yNum);
+    return result.toString();
+  }
+
+  return 'NaN';
 }
 
 const server = http.createServer((req, res) => {
-  const parsedUrl = url.parse(req.url, true);
-  const pathname = parsedUrl.pathname;
-  const query = parsedUrl.query;
+  const parsed = url.parse(req.url, true);
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
 
-  const expectedPath = '/' + EMAIL_PATH;
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
 
-  if (pathname !== expectedPath) {
+  if (parsed.pathname !== '/' + EMAIL_PATH) {
     res.statusCode = 404;
-    res.end(`404 - Use path: ${expectedPath}?x=number&y=number`);
+    res.end('404 - Use /' + EMAIL_PATH + '?x=number&y=number');
     return;
   }
 
-  const x = safeParseInt(query.x);
-  const y = safeParseInt(query.y);
+  const xStr = parsed.query.x || '';
+  const yStr = parsed.query.y || '';
 
-  if (isNaN(x) || isNaN(y) || !isNatural(x) || !isNatural(y)) {
-    res.end('NaN');
-    return;
-  }
+  const result = calculateLCM(xStr, yStr);
 
-  const result = findLCM(x, y);
-  res.end(result.toString());
+  res.end(result);
 });
 
 const PORT = process.env.PORT || 3000;
